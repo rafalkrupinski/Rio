@@ -158,9 +158,10 @@ public class ConfigHelper {
                     list.add(fileName);
                     continue;
                 }
-                if(!fileName.startsWith(File.separator)) {
-                    fileName = System.getProperty("user.dir")+File.separator+fileName;
-                }
+                //TODO: BUG FIX by Pawel Rubach                
+                //if(!fileName.startsWith(File.separator)) {
+                //    fileName = System.getProperty("user.dir")+File.separator+fileName;
+                //}
 
                 File f = new File(fileName);
                 if(!f.exists())
