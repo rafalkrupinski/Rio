@@ -20,7 +20,7 @@ deployment(name: 'Test Deploy 2') {
     groups System.getProperty(Constants.GROUPS_PROPERTY_NAME,
                               System.getProperty('user.name'))
 
-    include 'org.rioproject:gnostic:5.0-M4_sorcer1'
+    include 'org.rioproject:gnostic:5.0-M4_sorcer2'
 
     //logging {
     //    logger 'org.rioproject.associations', Level.FINEST
