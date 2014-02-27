@@ -23,6 +23,7 @@ import net.jini.security.TrustVerifier;
 import net.jini.security.proxytrust.ProxyTrustIterator;
 import net.jini.security.proxytrust.SingletonProxyTrustIterator;
 import net.jini.security.proxytrust.TrustEquivalence;
+import org.rioproject.deploy.DeploymentResult;
 import org.rioproject.deploy.ServiceProvisionListener;
 import org.rioproject.monitor.ProvisionMonitor.PeerInfo;
 import org.rioproject.monitor.ProvisionMonitorAdmin;
@@ -33,14 +34,10 @@ import org.rioproject.proxy.admin.ServiceAdminProxy;
 import org.rioproject.system.ComputeResourceUtilization;
 import org.rioproject.system.ResourceCapability;
 
-import java.io.IOException;
-import java.io.InvalidObjectException;
-import java.io.ObjectInputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.rmi.RemoteException;
-import java.util.Map;
 
 /**
  * A <code>ProvisionMonitorAdminProxy</code> is a proxy for the 
@@ -128,6 +125,10 @@ public class ProvisionMonitorAdminProxy extends ServiceAdminProxy implements Pro
             return(new SingletonProxyTrustIterator(monitorAdminProxy));
         }
 
+        private void writeObject(ObjectOutputStream out) throws IOException {
+            out.writeObject(this);
+        }
+
         /*
          * Verify that the server implements RemoteMethodControl 
          */
@@ -151,14 +152,14 @@ public class ProvisionMonitorAdminProxy extends ServiceAdminProxy implements Pro
     /**
      * @see org.rioproject.deploy.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final URL opStringURL) throws OperationalStringException, RemoteException {
-        return monitorAdminProxy.deploy(opStringURL);
+    public DeploymentResult deploy(final URL opStringURL) throws OperationalStringException, RemoteException {
+        return deploy(opStringURL, null);
     }
 
     /**
      * @see org.rioproject.deploy.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final URL opStringURL, final ServiceProvisionListener listener)
+    public DeploymentResult deploy(final URL opStringURL, final ServiceProvisionListener listener)
     throws OperationalStringException, RemoteException {
         return monitorAdminProxy.deploy(opStringURL, listener);
     }
@@ -166,29 +167,29 @@ public class ProvisionMonitorAdminProxy extends ServiceAdminProxy implements Pro
     /**
      * @see org.rioproject.deploy.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final String location) throws OperationalStringException,RemoteException {
-        return monitorAdminProxy.deploy(location, null);
+    public DeploymentResult deploy(final String location) throws OperationalStringException,RemoteException {
+        return deploy(location, null);
     }
 
     /**
      * @see org.rioproject.deploy.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final String location, final ServiceProvisionListener listener)
-    throws OperationalStringException, RemoteException {
+    public DeploymentResult deploy(final String location, final ServiceProvisionListener listener)
+        throws OperationalStringException, RemoteException {
         return monitorAdminProxy.deploy(location, listener);
     }
     
     /**
      * @see org.rioproject.deploy.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final OperationalString opString) throws OperationalStringException, RemoteException {
-        return monitorAdminProxy.deploy(opString);
+    public DeploymentResult deploy(final OperationalString opString) throws OperationalStringException, RemoteException {
+        return deploy(opString, null);
     }
     
     /**
      * @see org.rioproject.deploy.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final OperationalString opString, final ServiceProvisionListener listener)
+    public DeploymentResult deploy(final OperationalString opString, final ServiceProvisionListener listener)
     throws OperationalStringException, RemoteException {
         return monitorAdminProxy.deploy(opString, listener);
     }

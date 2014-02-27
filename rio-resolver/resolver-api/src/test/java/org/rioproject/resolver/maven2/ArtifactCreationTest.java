@@ -33,6 +33,11 @@ public class ArtifactCreationTest {
         new Artifact("org/foo.foo:bar:2.0");
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void createBadArtifact3() throws Exception {
+        new Artifact("E:\\workspaceBranch\\iGrid\\rio\\lib\\rio-lib-5.0-M4.jar;E:\\workspaceBranch\\iGrid\\rio\\lib-dl\\rio-proxy-5.0-M4.jar;E:\\workspaceBranch\\iGrid\\rio\\lib-dl\\rio-api-5.0-M4.jar;E:\\workspaceBranch\\iGrid\\rio\\lib-dl\\serviceui-2.2.2.jar");
+    }
+
     @Test
     public void createGoodArtifact() {
         Artifact a = new Artifact("org.foo:bar:2.0");

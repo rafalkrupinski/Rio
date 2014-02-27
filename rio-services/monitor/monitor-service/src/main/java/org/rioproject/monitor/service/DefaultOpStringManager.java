@@ -116,10 +116,11 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
     private ProvisionMonitor serviceProxy;
     private final Configuration config;
     private ProvisionMonitorEventProcessor eventProcessor;
-    private final OpStringMangerController opStringMangerController;
+    private final OpStringManagerController opStringMangerController;
     private StateManager stateManager;
     private ServiceProvisioner provisioner;
     private Uuid uuid;
+    private final boolean standAlone;
 
     /**
      * Create an DefaultOpStringManager, making it available to receive incoming
@@ -136,7 +137,7 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
                                   final OpStringManager parent,
                                   final boolean mode,
                                   final Configuration config,
-                                  final OpStringMangerController opStringMangerController) throws IOException {
+                                  final OpStringManagerController opStringMangerController) throws IOException {
 
         this.config = config;
         this.opStringMangerController = opStringMangerController;
@@ -161,7 +162,11 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
         if (parent != null) {
             addParent(parent);
             parent.addNested(this);
+            standAlone = false;
+        } else {
+            standAlone = opString.getNestedOperationalStrings().length==0;
         }
+        logger.info("Manager for {} standAlone: {}", opString.getName(), standAlone);
         if (opString.loadedFrom() != null &&
             opString.loadedFrom().toExternalForm().startsWith("file") &&
             opString.loadedFrom().toExternalForm().endsWith(".oar")) {
@@ -174,8 +179,12 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
             }
         }
     }
-    
-    OAR getOAR() {
+
+    public OperationalStringManager getOperationalStringManager() {
+        return proxy;
+    }
+
+    public OAR getOAR() {
         return oar;
     }
 
@@ -278,7 +287,7 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
             if (!nestedManagers.isEmpty()) {
                 OpStringManager[] nestedMgrs = nestedManagers.toArray(new OpStringManager[nestedManagers.size()]);
                 for (OpStringManager nestedMgr : nestedMgrs) {
-                    if (nestedMgr.getParentCount() == 1)
+                    if (nestedMgr.getParentCount() == 1 && !nestedMgr.isStandAlone())
                         nestedMgr.setDeploymentStatus(OperationalString.UNDEPLOYED);
                 }
             }
@@ -383,11 +392,16 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
             ServiceBeanInstance[] instances = (ServiceBeanInstance[]) knownInstanceMap.get(elem);
             try {
                 int alreadyRunning = mgr.startManager(listener, instances);
+                if(logger.isTraceEnabled()) {
+                    logger.trace("{} ServiceElementManager has {} instances already running {}",
+                                opString.getName(), elem.getName(), alreadyRunning);
+                }
                 if (alreadyRunning > 0) {
                     updateServiceElements(new ServiceElement[]{mgr.getServiceElement()});
                 }
                 if(idleServiceListener !=null) {
-                    logger.info("when: {}, timeUnit: {}", undeployOption.getWhen(), undeployOption.getTimeUnit());
+                    logger.info("Deployment {} has an IDLE undeploy option; when: {}, timeUnit: {}",
+                                opString.getName(), undeployOption.getWhen(), undeployOption.getTimeUnit());
                     mgr.setIdleTime(undeployOption.getTimeUnit().toMillis(undeployOption.getWhen()));
                     ServiceChannel.getInstance().subscribe(idleServiceListener, elem, ServiceChannelEvent.Type.IDLE);
                 }
@@ -395,7 +409,9 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
                 logger.warn("Starting ServiceElementManager", e);
             }
         }
-
+        if(logger.isTraceEnabled()) {
+            logger.info("Started managers for {}", opString.getName());
+        }
     }
 
     class IdleServiceListener implements ServiceChannelListener {
@@ -663,7 +679,12 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
                 logger.debug("OperationalStringManager not unexported");
         }
         /* Remove ourselves from the collection */
-        opStringMangerController.remove(this);
+        if(opStringMangerController.remove(this)) {
+            if(logger.isDebugEnabled())
+                logger.debug("Removed [{}]", getName());
+        } else {
+            logger.warn("Did not remove [{}] when terminating", getName());
+        }
 
         /* Stop all ServiceElementManager instances */
         for (ServiceElementManager mgr : svcElemMgrs) {
@@ -681,7 +702,7 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
         for (OpStringManager nestedMgr : nestedMgrs) {
             /* If the nested DefaultOpStringManager has only 1 parent, then
              * terminate (undeploy) that DefaultOpStringManager as well */
-            if (nestedMgr.getParentCount() == 1) {
+            if (nestedMgr.getParentCount() == 1 && !nestedMgr.isStandAlone()) {
                 terminated.add(nestedMgr.doGetOperationalString());
                 nestedMgr.terminate(killServices);
             } else {
@@ -1056,13 +1077,14 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
             if (mgr == null)
                 throw new OperationalStringException("Unmanaged ServiceElement [" + sElem.getName() + "]", false);
             return (mgr.getServiceBeanInstances());
-        } catch (Throwable t) {
-            logger.warn("Getting ServiceBeanInstances for ServiceElement [{}]", sElem.getName(), t);
-            if (t instanceof OperationalStringException)
-                throw (OperationalStringException) t;
-            else
+        } catch (Exception e) {
+            if (e instanceof OperationalStringException) {
+                throw (OperationalStringException) e;
+            } else {
+                logger.warn("Getting ServiceBeanInstances for ServiceElement [{}]", sElem.getName(), e);
                 throw new OperationalStringException("Getting ServiceBeanInstances for ServiceElement " +
-                                                     "["+sElem.getName() + "]", t);
+                                                     "["+sElem.getName() + "]", e);
+            }
         }
     }
 
@@ -1424,6 +1446,10 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
         return (parents.size());
     }
 
+    public boolean isStandAlone() {
+        return standAlone;
+    }
+
     /**
      * Returns a <code>TrustVerifier</code> which can be used to verify that a
      * given proxy to this policy handler can be trusted
@@ -1463,5 +1489,19 @@ public class DefaultOpStringManager implements OperationalStringManager, OpStrin
             scheduledTaskList.remove(task);
     }
 
-} // End DefaultOpStringManager
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        DefaultOpStringManager manager = (DefaultOpStringManager) o;
+        return opString.getName().equals(manager.opString.getName());
+    }
+
+    @Override
+    public int hashCode() {
+        return opString.getName().hashCode();
+    }
+}
 

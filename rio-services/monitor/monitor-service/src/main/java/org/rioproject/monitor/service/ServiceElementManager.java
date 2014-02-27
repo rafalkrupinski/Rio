@@ -244,6 +244,7 @@ public class ServiceElementManager implements InstanceIDManager {
         MethodConstraints serviceListenerConstraints=
                 new BasicMethodConstraints(new InvocationConstraints(new ConnectionRelativeTime(30000), null));
         ProxyPreparer defaultProxyPreparer =  new BasicProxyPreparer(false, serviceListenerConstraints, null);
+
         if(args==null) {
             proxyPreparer = defaultProxyPreparer;
         } else {
@@ -487,9 +488,14 @@ public class ServiceElementManager implements InstanceIDManager {
                         int toRemove = count - svcElement.getPlanned();
                         ProvisionRequest[] removed = provisioner.getPendingManager().removeServiceElement(svcElement,
                                                                                                           toRemove);
-                        for (ProvisionRequest aRemoved : removed)
+                        for (ProvisionRequest aRemoved : removed) {
+                            logger.info("===> [{}] service-element: {} service-bean-config: {}",
+                                        LoggingUtil.getLoggingName(svcElement),
+                                        aRemoved.getServiceElement(),
+                                        aRemoved.getServiceElement().getServiceBeanConfig());
                             removeInstanceID(aRemoved.getServiceElement().getServiceBeanConfig().getInstanceID(),
                                              "removal from pending testManager");
+                        }
                     } else {
                         provisioner.getPendingManager().updateProvisionRequests(svcElement, provListener);
                     }
@@ -779,12 +785,7 @@ public class ServiceElementManager implements InstanceIDManager {
         boolean terminated = false;
         boolean forceClean = false;
         try {
-            logger.trace("Obtaining DestroyAdmin for [{}]", LoggingUtil.getLoggingName(svcElement));
-            Administrable admin = (Administrable)service;
-            DestroyAdmin destroyAdmin = (DestroyAdmin)admin.getAdmin();
-            logger.trace("DestroyAdmin obtained, destroy the service [{}]", LoggingUtil.getLoggingName(svcElement));
-            destroyAdmin.destroy();
-            logger.trace("The service [{}] has been destroyed", LoggingUtil.getLoggingName(svcElement));
+            doDestroyService(service, serviceUuid, clean);
             terminated = true;
         } catch(Exception e) {
             if(mgrLogger.isTraceEnabled()) {
@@ -792,9 +793,23 @@ public class ServiceElementManager implements InstanceIDManager {
             }
             
             if(!ThrowableUtil.isRetryable(e)) {
-                mgrLogger.debug("Force clean for [{}] ServiceBeanInstance [{}]",
-                               LoggingUtil.getLoggingName(svcElement), serviceUuid.toString());
+                mgrLogger.debug("Exception {}:{} is not retryable, force clean for [{}] ServiceBeanInstance [{}]",
+                               e.getClass().getName(),
+                               e.getMessage(),
+                               LoggingUtil.getLoggingName(svcElement),
+                               serviceUuid.toString());
                 forceClean = true;
+            } else {
+                try {
+                    doDestroyService(service, serviceUuid, clean);
+                } catch (RemoteException e1) {
+                    mgrLogger.debug("Retried service destroy and it failed. {}:{}, force clean for [{}] ServiceBeanInstance [{}]",
+                                    e1.getClass().getName(),
+                                    e1.getMessage(),
+                                    LoggingUtil.getLoggingName(svcElement),
+                                    serviceUuid.toString());
+                    forceClean = true;
+                }
             }
         }
         ServiceBeanInstance instance;
@@ -811,6 +826,24 @@ public class ServiceElementManager implements InstanceIDManager {
                                                                 instance);
         processEvent(event);
         return(terminated);
+    }
+
+    /**
+     * Destroy a service
+     *
+     * @param service The ServiceItem of the service to destroy
+     * @param serviceUuid The service Uuid
+     * @param clean remove service references
+     *
+     * @return True if the service is destroyed
+     */
+    void doDestroyService(final Object service, final Uuid serviceUuid, boolean clean) throws RemoteException {
+        logger.trace("Obtaining DestroyAdmin for [{}]", LoggingUtil.getLoggingName(svcElement));
+        Administrable admin = (Administrable)service;
+        DestroyAdmin destroyAdmin = (DestroyAdmin)admin.getAdmin();
+        logger.trace("DestroyAdmin obtained, destroy the service [{}]", LoggingUtil.getLoggingName(svcElement));
+        destroyAdmin.destroy();
+        logger.trace("The service [{}] has been destroyed", LoggingUtil.getLoggingName(svcElement));
     }
 
     /**
@@ -1234,8 +1267,10 @@ public class ServiceElementManager implements InstanceIDManager {
         if(lCache!=null && sElemListener!=null) {
             try {
                 lCache.removeListener(sElemListener);
-            } catch (Throwable t) {
-                mgrLogger.warn("Terminating LookupCache", t);
+            } catch (IllegalStateException e) {
+                mgrLogger.warn("Terminating LookupCache: {}", e.getMessage());
+            } catch (Exception e) {
+                mgrLogger.warn("Terminating LookupCache", e);
             }
         }
 
@@ -1747,8 +1782,10 @@ public class ServiceElementManager implements InstanceIDManager {
                 }
                 synchronized(serviceBeanList) {
                     /* Prepare the proxy */
-                    if(proxy instanceof RemoteMethodControl)
+                   if(proxy instanceof RemoteMethodControl) {
                         proxy = proxyPreparer.prepareProxy(proxy);
+                        logger.trace("Prepared proxy for [{}]", LoggingUtil.getLoggingName(svcElement));
+                    }
 
                     addServiceProxy(proxy);
 
@@ -1781,6 +1818,7 @@ public class ServiceElementManager implements InstanceIDManager {
                 try {
                     Thread.currentThread().setContextClassLoader(proxy.getClass().getClassLoader());
                     proxy = new MarshalledObject(proxy).get();
+
                     if(proxy instanceof ServiceActivityProvider && idleTime>0) {
                         synchronized (idleServiceManager) {
                             if(idleServiceManager.get()==null) {
@@ -1788,11 +1826,7 @@ public class ServiceElementManager implements InstanceIDManager {
                             }
                         }
                         idleServiceManager.get().addService((ServiceActivityProvider)proxy);
-                        logger.info("Check service [{}] idle time", LoggingUtil.getLoggingName(svcElement));
                     }
-
-                    if(proxy instanceof RemoteMethodControl)
-                        proxy = proxyPreparer.prepareProxy(proxy);
 
                     if(proxy instanceof MonitorableService) {
                         Uuid uuid = instance.getServiceBeanID();
@@ -1806,7 +1840,6 @@ public class ServiceElementManager implements InstanceIDManager {
                         setFaultDetectionHandler(proxy, serviceID);
                     } else {
                         StringBuilder sb = new StringBuilder();
-                        sb.append("Proxy interfaces: ");
                         for(Class c : proxy.getClass().getInterfaces()) {
                             if(sb.length()>0)
                                 sb.append(", ");
@@ -1815,7 +1848,8 @@ public class ServiceElementManager implements InstanceIDManager {
                         /* An ambiguous service is a service that we cannot
                          * get the serviceID of */
                         mgrLogger.debug("Could not get the serviceID of [{}], [proxy={}] provisioned to [{}]. " +
-                                        "Attempts will be made to resolve the serviceID of this service. {}",
+                                        "Attempts will be made to resolve the serviceID of this service. " +
+                                        "Proxy interfaces: \n{}",
                                         LoggingUtil.getLoggingName(svcElement),
                                         proxy.getClass().getName(),
                                         hostName,
@@ -1948,7 +1982,7 @@ public class ServiceElementManager implements InstanceIDManager {
                 return;
             ServiceBeanInstance instance;
             Uuid uuid = UuidFactory.create(sID.getMostSignificantBits(), sID.getLeastSignificantBits());
-            mgrLogger.warn("\n********************************\n[{}] service failure, type: {}, proxy: {}, active monitor? {}\n********",
+            mgrLogger.warn("\n********************************\n[{}] service failure, type: {}, proxy: {}, active monitor? {}\n********************************",
                            LoggingUtil.getLoggingName(svcElement),
                            svcElement.getProvisionType(),
                            proxy.getClass().getName(),
@@ -2013,6 +2047,11 @@ public class ServiceElementManager implements InstanceIDManager {
                     provRequest.getServiceElement().setServiceBeanConfig(sbConfig);
                 }
 
+                if(shutdown.get()) {
+                    logger.warn("Cancel provision task, in the process of termination for [{}]",
+                                LoggingUtil.getLoggingName(svcElement));
+                    return;
+                }
                 provRequest.getServiceElement().setPlanned(maintain);
                 if(svcElement.getProvisionType()==ProvisionType.DYNAMIC) {
                     int pending = provisioner.getPendingManager().getCount(svcElement);

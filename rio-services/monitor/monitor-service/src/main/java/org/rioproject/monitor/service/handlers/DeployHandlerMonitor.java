@@ -16,8 +16,9 @@
 package org.rioproject.monitor.service.handlers;
 
 import org.rioproject.deploy.DeployAdmin;
+import org.rioproject.deploy.DeploymentResult;
 import org.rioproject.monitor.service.OpStringManager;
-import org.rioproject.monitor.service.OpStringMangerController;
+import org.rioproject.monitor.service.OpStringManagerController;
 import org.rioproject.opstring.OperationalString;
 import org.rioproject.opstring.OperationalStringException;
 import org.slf4j.Logger;
@@ -38,13 +39,13 @@ public class DeployHandlerMonitor {
     private DeployHandler[] deployHandlers;
     private ScheduledExecutorService deployExecutor;
     private long lastRecordedTime;
-    private OpStringMangerController opStringMangerController;
+    private OpStringManagerController opStringMangerController;
     private DeployAdmin deployAdmin;
     static Logger logger = LoggerFactory.getLogger(DeployHandlerMonitor.class.getName());
 
     public DeployHandlerMonitor(DeployHandler[] deployHandlers,
                                 long deployScan,
-                                OpStringMangerController opStringMangerController,
+                                OpStringManagerController opStringMangerController,
                                 DeployAdmin deployAdmin) {
         this.deployHandlers = deployHandlers;
         this.opStringMangerController = opStringMangerController;
@@ -53,8 +54,7 @@ public class DeployHandlerMonitor {
         lastRecordedTime = System.currentTimeMillis();
         deployExecutor = Executors.newSingleThreadScheduledExecutor();
 
-        deployExecutor.scheduleAtFixedRate(
-                                              new Runnable() {
+        deployExecutor.scheduleAtFixedRate(new Runnable() {
                                                   public void run() {
                                                       processDeployHandlers(new Date(lastRecordedTime));
                                                       lastRecordedTime = System.currentTimeMillis();
@@ -78,17 +78,18 @@ public class DeployHandlerMonitor {
             for (OperationalString opstring : opstrings) {
                 String action = null;
                 try {
-                    Map<String, Throwable> result;
+                    Map<String, Throwable> errorMap;
                     if (opStringMangerController.getOpStringManager(opstring.getName())!=null) {
                         action = "update";
                         OpStringManager mgr = opStringMangerController.getOpStringManager(opstring.getName());
-                        result = mgr.doUpdateOperationalString(opstring);
+                        errorMap = mgr.doUpdateOperationalString(opstring);
                     } else {
                         action = "deploy";
-                        result = deployAdmin.deploy(opstring, null);
+                        DeploymentResult result = deployAdmin.deploy(opstring, null);
+                        errorMap = result.getErrorMap();
                     }
-                    if (!result.isEmpty()) {
-                        for (Map.Entry<String, Throwable> entry : result.entrySet()) {
+                    if (!errorMap.isEmpty()) {
+                        for (Map.Entry<String, Throwable> entry : errorMap.entrySet()) {
                             logger.warn("Deploying service [" + entry.getKey() + "] resulted in " +
                                         "the following exception",
                                         entry.getValue());

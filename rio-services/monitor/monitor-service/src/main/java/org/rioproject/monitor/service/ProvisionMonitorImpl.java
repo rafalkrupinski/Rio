@@ -30,10 +30,7 @@ import net.jini.security.TrustVerifier;
 import net.jini.security.proxytrust.ServerProxyTrust;
 import org.rioproject.RioVersion;
 import org.rioproject.config.Constants;
-import org.rioproject.deploy.DeployAdmin;
-import org.rioproject.deploy.DeployedService;
-import org.rioproject.deploy.ServiceBeanInstantiator;
-import org.rioproject.deploy.ServiceProvisionListener;
+import org.rioproject.deploy.*;
 import org.rioproject.event.EventDescriptor;
 import org.rioproject.event.EventHandler;
 import org.rioproject.impl.client.JiniClient;
@@ -112,7 +109,7 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
     private GaugeWatch provisionWatch;
     /** Handles discovery and synchronization with other ProvisionMonitors */
     private ProvisionMonitorPeer provisionMonitorPeer;
-    private final OpStringMangerController opStringMangerController = new OpStringMangerController();
+    private final OpStringManagerController opStringMangerController = new OpStringManagerController();
     private DeploymentVerifier deploymentVerifier;
     private StateManager stateManager;
     /** A Timer used to schedule load tasks */
@@ -226,8 +223,8 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
                     admin = new ProvisionMonitorAdminImpl(this, adminExporter);
             }
             adminProxy = admin.getServiceAdmin();
-        } catch (Throwable t) {
-            logger.warn("Getting ProvisionMonitorAdminImpl", t);
+        } catch (Exception e) {
+            logger.warn("Getting ProvisionMonitorAdminImpl", e);
         }
         return (adminProxy);
     }
@@ -376,7 +373,7 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
     /*
      * @see org.rioproject.monitor.ProvisionMonitorImplMBean#deploy
      */
-    public Map deploy(String opStringLocation) throws MalformedURLException {
+    public DeploymentResult deploy(String opStringLocation) throws MalformedURLException {
         if(opStringLocation == null)
             throw new IllegalArgumentException("argument cannot be null");
         URL opStringURL = null;
@@ -393,7 +390,7 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
                 opStringURL = new URL(opStringLocation);
         }
 
-        Map<String, Throwable> m = null;
+        DeploymentResult deploymentResult;
         /*
          * The deploy call may be invoked via the MBeanServer. If it is
          * context classloader will not be the classloader which loaded this
@@ -424,13 +421,14 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
                     }
                 });
             }
-            m = deploy(opStringURL, null);
+            deploymentResult = deploy(opStringURL, null);
         } catch(OperationalStringException e) {
             Throwable cause =  e.getCause();
             if(cause==null)
                 cause = e;
-            m = new HashMap<String, Throwable>();
+            Map<String, Throwable> m = new HashMap<String, Throwable>();
             m.put(cause.getClass().getName(), cause);
+            deploymentResult = new DeploymentResult(null, m);
             logger.warn("Deploying {}", opStringURL, e);
         } finally {
             if(swapCLs) {
@@ -442,7 +440,7 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
                 });
             }
         }
-        return(m);
+        return deploymentResult;
     }
 
     private URL getArtifactURL(String a) throws OperationalStringException {
@@ -470,7 +468,7 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
     /*
      * @see org.rioproject.monitor.ProvisionMonitorImplMBean#deploy
      */
-    public Map<String, Throwable> deploy(String opStringLocation, ServiceProvisionListener listener)
+    public DeploymentResult deploy(String opStringLocation, ServiceProvisionListener listener)
         throws OperationalStringException {
         if(opStringLocation == null)
             throw new IllegalArgumentException("OperationalString location cannot be null");
@@ -490,14 +488,13 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
     /*
      * @see org.rioproject.monitor.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(final URL opStringUrl, ServiceProvisionListener listener)
+    public DeploymentResult deploy(final URL opStringUrl, ServiceProvisionListener listener)
     throws OperationalStringException {
         if(opStringUrl == null)
             throw new IllegalArgumentException("OperationalString URL cannot be null");
-        Map<String, Throwable> map = new HashMap<String, Throwable>();
-
+        DeploymentResult deploymentResult;
         try {
-            OAR oar = null;
+            OAR oar;
             URL opStringUrlToUse = opStringUrl;
             if(opStringUrl.toExternalForm().endsWith("oar")) {
                 oar = new OAR(opStringUrl);
@@ -506,34 +503,27 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
                 opStringUrlToUse = new URL(sb.toString());
             }
             OperationalString[] opStrings = opStringLoader.parseOperationalString(opStringUrlToUse);
-            if(opStrings != null) {
-                DeployRequest request = new DeployRequest(opStrings, (oar==null?null:oar.getRepositories()));
-                deploymentVerifier.verifyDeploymentRequest(request);
-
-                for (OperationalString opString : opStrings) {
-                    if (!opStringMangerController.opStringExists(opString.getName())) {
-                        logger.info("Deploying Operational String [{}]", opString.getName());
-                        opStringMangerController.addOperationalString(opString, map, null, null, listener);
-                    } else {
-                        logger.info("Operational String [{}] already deployed", opString.getName());
-                    }
-                }
+            if(opStrings != null && opStrings.length>0) {
+                deploymentResult = deploy(opStrings[0], listener);
+            } else {
+                throw new OperationalStringException("After parsing "+opStringUrl.toExternalForm()+", " +
+                                                     "there were no OperationalString returned");
             }
-        } catch(Throwable t) {
-            logger.warn("Problem opening or deploying {}", opStringUrl.toExternalForm(), t);
-            throw new OperationalStringException("Deploying OperationalString", t);
+        } catch(Exception e) {
+            logger.warn("Problem opening or deploying {}", opStringUrl.toExternalForm(), e);
+            throw new OperationalStringException("Deploying OperationalString", e);
         }
-        return (map);
+        return deploymentResult;
     }
 
     /*
      * @see org.rioproject.monitor.DeployAdmin#deploy
      */
-    public Map<String, Throwable> deploy(OperationalString opString, ServiceProvisionListener listener)
+    public DeploymentResult deploy(OperationalString opString, ServiceProvisionListener listener)
     throws OperationalStringException {
         if(opString == null)
             throw new IllegalArgumentException("OperationalString cannot be null");
-        Map<String, Throwable> map = new HashMap<String, Throwable>();
+        DeploymentResult deploymentResult;
         try {
             if(!opStringMangerController.opStringExists(opString.getName())) {
                 logger.info("Deploying Operational String [{}]", opString.getName());
@@ -541,18 +531,22 @@ public class ProvisionMonitorImpl extends ServiceBeanAdapter implements Provisio
                 DeployRequest request = new DeployRequest(opString, (RemoteRepository[])null);
                 deploymentVerifier.verifyDeploymentRequest(request);
 
-                opStringMangerController.addOperationalString(opString, map, null, null, listener);
+                Map<String, Throwable> map = new HashMap<String, Throwable>();
+                OpStringManager manager = opStringMangerController.addOperationalString(opString, map, null, null, listener);
+                deploymentResult = new DeploymentResult(manager.getOperationalStringManager(), map);
             } else {
                 if(logger.isInfoEnabled())
                     logger.info("Operational String [{}] already deployed", opString.getName());
+                OperationalStringManager manager = opStringMangerController.getOpStringManager(opString.getName()).getOperationalStringManager();
+                deploymentResult = new DeploymentResult(manager, null);
             }
-        } catch(Throwable t) {
-            logger.warn("Deploying OperationalString [{}]", opString.getName(), t);
-            if(!(t instanceof OperationalStringException))
-                throw new OperationalStringException(String.format("Deploying OperationalString [%s]", opString.getName()), t);
-            throw (OperationalStringException)t;
+        } catch(Exception e) {
+            logger.warn("Deploying OperationalString [{}]", opString.getName(), e);
+            if(!(e instanceof OperationalStringException))
+                throw new OperationalStringException(String.format("Deploying OperationalString [%s]", opString.getName()), e);
+            throw (OperationalStringException)e;
         }
-        return (map);
+        return deploymentResult;
     }
 
 

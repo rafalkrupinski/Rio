@@ -38,9 +38,9 @@ import java.util.*;
 /**
  * This class manages interactions with {@link OpStringManager} classes.
  */
-public class OpStringMangerController {
+public class OpStringManagerController {
     /** Collection for all OperationalString OpStringManager instances */
-    private final List<OpStringManager> opStringManagers = new ArrayList<OpStringManager>();
+    private final Set<OpStringManager> opStringManagers = new HashSet<OpStringManager>();
     /** Collection for all pending (in process) OperationalString
      * OpStringManager instances */
     private final List<OpStringManager> pendingManagers = new ArrayList<OpStringManager>();
@@ -51,7 +51,7 @@ public class OpStringMangerController {
     private StateManager stateManager;
     private ServiceProvisioner serviceProvisioner;
     private Uuid uuid;
-    private static Logger logger = LoggerFactory.getLogger(OpStringMangerController.class.getName());
+    private static Logger logger = LoggerFactory.getLogger(OpStringManagerController.class.getName());
     private DeploymentVerifier deploymentVerifier;
 
     void setServiceProvisioner(final ServiceProvisioner serviceProvisioner) {
@@ -112,7 +112,7 @@ public class OpStringMangerController {
      */
     public OperationalString[] getOperationalStrings() {
         if(opStringManagers.isEmpty())
-            return (new OperationalString[0]);
+            return new OperationalString[0];
         List<OpStringManager> list = new ArrayList<OpStringManager>();
         for(OpStringManager opMgr : getOpStringManagers()) {
             if(opMgr.isTopLevel())
@@ -227,10 +227,12 @@ public class OpStringMangerController {
      *
      * @param opStringManager The OpStringManager to remove
      */
-    public void remove(final OpStringManager opStringManager) {
+    public boolean remove(final OpStringManager opStringManager) {
+        boolean removed;
         synchronized (opStringManagers) {
-            opStringManagers.remove(opStringManager);
+            removed = opStringManagers.remove(opStringManager);
         }
+        return removed;
     }
 
     /**
@@ -253,12 +255,12 @@ public class OpStringMangerController {
      *
      * @throws Exception if an OpStringManger cannot be created
      */
-    public OpStringManager addOperationalString(final OperationalString opString,
-                                                final Map<String, Throwable> map,
-                                                final OpStringManager parent,
-                                                final DeployAdmin dAdmin,
-                                                final ServiceProvisionListener listener) throws Exception {
-        DefaultOpStringManager opMgr = null;
+    public synchronized OpStringManager addOperationalString(final OperationalString opString,
+                                                             final Map<String, Throwable> map,
+                                                             final OpStringManager parent,
+                                                             final DeployAdmin dAdmin,
+                                                             final ServiceProvisionListener listener) throws Exception {
+        OpStringManager opMgr = null;
         boolean active = dAdmin==null;
         try {
             if(!opStringExists(opString.getName())) {
@@ -267,9 +269,9 @@ public class OpStringMangerController {
 
                 try {
                     opMgr = new DefaultOpStringManager(opString, parent, active, config, this);
-                    opMgr.setServiceProxy(serviceProxy);
-                    opMgr.setEventProcessor(eventProcessor);
-                    opMgr.setStateManager(stateManager);
+                    ((DefaultOpStringManager)opMgr).setServiceProxy(serviceProxy);
+                    ((DefaultOpStringManager)opMgr).setEventProcessor(eventProcessor);
+                    ((DefaultOpStringManager)opMgr).setStateManager(stateManager);
                 } catch (IOException e) {
                     logger.warn("Creating OpStringManager", e);
                     return(null);
@@ -278,10 +280,15 @@ public class OpStringMangerController {
                     pendingManagers.add(opMgr);
                 }
 
-                Map<String, Throwable> errorMap = opMgr.init(active, serviceProvisioner, uuid, listener);
+                boolean added;
                 synchronized(opStringManagers) {
-                    opStringManagers.add(opMgr);
+                    added = opStringManagers.add(opMgr);
                 }
+                if(!added) {
+                    logger.info("Operational String [{}] already deployed", opString.getName());
+                    return null;
+                }
+                Map<String, Throwable> errorMap = ((DefaultOpStringManager)opMgr).init(active, serviceProvisioner, uuid, listener);
 
                 if(dAdmin!=null) {
                     OperationalStringManager activeMgr;
@@ -297,12 +304,12 @@ public class OpStringMangerController {
                                 logger.warn("Getting ServiceBeanInstances from active testManager", e);
                             }
                         }
-                        opMgr.startManager(listener, elemInstanceMap);
+                        ((DefaultOpStringManager)opMgr).startManager(listener, elemInstanceMap);
                     } catch(Exception e) {
                         logger.warn("Getting active OperationalStringManager", e);
                     }
                 } else {
-                    opMgr.startManager(listener);
+                    ((DefaultOpStringManager)opMgr).startManager(listener);
                 }
 
                 if(map != null)
@@ -310,15 +317,30 @@ public class OpStringMangerController {
                 if(stateManager!=null)
                     stateManager.stateChanged(opMgr, false);
                 OperationalString[] nestedStrings = opString.getNestedOperationalStrings();
+                if(logger.isTraceEnabled()) {
+                    logger.trace("[{}] nested OperationalString count: [{}]", opString.getName(), nestedStrings.length);
+                }
                 for (OperationalString nestedString : nestedStrings) {
+                    if(logger.isTraceEnabled()) {
+                        logger.trace("Processing nested OperationalString [{}]", nestedString.getName());
+                    }
                     addOperationalString(nestedString, map, opMgr, dAdmin, listener);
+                    if(logger.isTraceEnabled()) {
+                        logger.trace("Completed processing nested OperationalString [{}]", nestedString.getName());
+                    }
                 }
             } else {
+                if(logger.isTraceEnabled()) {
+                    logger.trace("OperationalString [{}] exists, check for parent [{}]", opString.getName(), parent);
+                }
+                opMgr = getOpStringManager(opString.getName());
                 if(parent != null) {
-                    OpStringManager mgr = getOpStringManager(opString.getName());
-                    if(mgr != null) {
-                        parent.addNested(mgr);
+                    if(opMgr != null) {
+                        parent.addNested(opMgr);
                     }
+                }
+                if(logger.isTraceEnabled()) {
+                    logger.trace("Completed processing OperationalString [{}] exists", opString.getName());
                 }
             }
         } finally {
@@ -334,7 +356,9 @@ public class OpStringMangerController {
                 event.setRemoteRepositories(opMgr.getRemoteRepositories());
             eventProcessor.processEvent(event);
         }
-        return (opMgr);
+        if(logger.isTraceEnabled())
+            logger.trace("Return from add OperationalString [{}]", opString.getName());
+        return opMgr;
     }
 
     public void shutdownAllManagers() {
@@ -368,14 +392,13 @@ public class OpStringMangerController {
      *
      * @return true if the  OperationalString with the provided name is loaded
      */
-    public boolean opStringExists(final String opStringName) {
+    public synchronized boolean opStringExists(final String opStringName) {
         boolean exists = false;
-        synchronized(pendingManagers) {
-            for (OpStringManager mgr : pendingManagers) {
-                if (mgr.getName().equals(opStringName)) {
-                    exists = true;
-                    break;
-                }
+        OpStringManager[] pending = getPendingOpStringManagers();
+        for (OpStringManager mgr : pending) {
+            if (mgr.getName().equals(opStringName)) {
+                exists = true;
+                break;
             }
         }
         if(!exists) {
@@ -386,7 +409,6 @@ public class OpStringMangerController {
                 }
             }
         }
-
         return (exists);
     }
 
