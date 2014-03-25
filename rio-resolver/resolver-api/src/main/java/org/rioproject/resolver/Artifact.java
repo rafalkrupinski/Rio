@@ -95,7 +95,7 @@ public class Artifact {
     public String getFileName(String ext) {
         String name;
         if(classifier.length()>0) {
-            System.out.println("classifier length: "+classifier.length());
+            //System.out.println("classifier length: "+classifier.length());
             name = String.format("%s-%s-%s.%s", artifactId, version, classifier, ext);
         } else {
             name = String.format("%s-%s.%s", artifactId, version, ext);
