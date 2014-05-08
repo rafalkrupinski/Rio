@@ -23,7 +23,7 @@
         <dependency>
             <groupId>org.rioproject</groupId>
             <artifactId>rio-lib</artifactId>
-            <version>5.0-M4-S6</version>
+            <version>5.0-M4-S7</version>
         </dependency>
 
         <dependency>

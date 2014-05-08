@@ -22,8 +22,8 @@ String getConfigEntry() {
 deployment(name:'Event Collector') {
     groups System.getProperty(Constants.GROUPS_PROPERTY_NAME, System.getProperty('user.name'))
 
-    artifact id: 'service-dl',   'org.rioproject.event-collector:event-collector-proxy:5.0-M4-S6'
-    artifact id: 'service-impl', 'org.rioproject.event-collector:event-collector-service:5.0-M4-S6'
+    artifact id: 'service-dl',   'org.rioproject.event-collector:event-collector-proxy:5.0-M4-S7'
+    artifact id: 'service-impl', 'org.rioproject.event-collector:event-collector-service:5.0-M4-S7'
 
     configuration getConfigEntry()
 
