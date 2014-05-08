@@ -16,6 +16,7 @@
 package org.rioproject.resolver.maven2;
 
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.Test;
 import org.rioproject.resolver.RemoteRepository;
 
@@ -106,6 +107,7 @@ public class ITSettingsParserTest {
     @Test
     public void parserTest3() throws IOException {
         File settingsFile = new File(System.getProperty("user.home"), ".m2/settings.xml");
+        Assume.assumeTrue(settingsFile.exists());
         SettingsParser parser = new SettingsParser();
         Settings settings = parser.parse(settingsFile);
         List<RemoteRepository> rrs = settings.getRemoteRepositories();
@@ -175,11 +177,16 @@ public class ITSettingsParserTest {
     private File getMavenSettingsFile() throws IOException {
         // If maven home specified, first try that, otherwise try user home dir
         String m2Home = System.getenv().get("M2_HOME");
-        File globalConfig = m2Home != null ? new File(m2Home, "conf/settings.xml") : new File("does not exist");
+        File globalConfig = null;
+        if (m2Home != null)
+            globalConfig = new File(m2Home, "conf/settings.xml");
         File userConfig = new File(new File(System.getProperty("user.home")), ".m2/settings.xml");
-        if (userConfig.exists() && userConfig.canRead()) {
+        boolean userConfigOK = userConfig.exists() && userConfig.canRead();
+        boolean globalCfgOK = globalConfig != null && globalConfig.exists() && globalConfig.canRead();
+        Assume.assumeTrue(userConfigOK || globalCfgOK);
+        if (userConfigOK) {
             return userConfig;
-        } else if (globalConfig.exists() && globalConfig.canRead()) {
+        } else if (globalCfgOK) {
             return globalConfig;
         } else {
             throw new IOException("Unable to find a usable Maven settings file (global or in user home directory)");

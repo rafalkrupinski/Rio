@@ -57,10 +57,10 @@ public class ITResolverTest {
             testRepo = Repository.getLocalRepository();
             if(testRepo.exists())
                 FileUtils.remove(testRepo);
-            String[] classPath = r.getClassPathFor("net.jini:jsk-lib:2.1");
-            Assert.assertTrue("classPath for net.jini:jsk-lib:2.1 expected to be > 1, actual="+classPath.length,
+            String[] classPath = r.getClassPathFor("net.jini:jsk-lib:2.2.2");
+            Assert.assertTrue("classPath for net.jini:jsk-lib:2.2.2 expected to be > 1, actual="+classPath.length,
                               classPath.length>0);
-            File jskPlatformJar = new File(testRepo, "net/jini/jsk-lib/2.1/jsk-lib-2.1.jar");
+            File jskPlatformJar = new File(testRepo, "net/jini/jsk-lib/2.2.2/jsk-lib-2.2.2.jar");
             Assert.assertTrue(jskPlatformJar.exists());
             StringBuilder sb = new StringBuilder();
             for(String s : classPath) {
@@ -101,8 +101,8 @@ public class ITResolverTest {
         if(testRepo.exists())
             FileUtils.remove(testRepo);
         Resolver r = new AetherResolver();
-        List<String> cp = getClassPathFor("com.sun.jini:outrigger:jar:dl:2.1", r);
-        Assert.assertTrue(cp.size()==1);
+        List<String> cp = getClassPathFor("org.apache.river:outrigger-dl:2.2.2", r);
+        Assert.assertTrue(cp.size()==2);
     }
 
     private List<String> getClassPathFor(String artifact, Resolver r) throws ResolverException {
