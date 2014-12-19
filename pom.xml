@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.rioproject</groupId>
     <artifactId>main</artifactId>
-    <version>5.0-M5</version>
+    <version>5.0-M5S0</version>
     <packaging>pom</packaging>
     <name>Rio Project</name>
     <description>Rio Project</description>
@@ -178,10 +178,10 @@
 
     <distributionManagement>
         <repository>
-            <id>rio</id>
-            <name>Rio Repository</name>
-            <url>ftp://www.rio-project.org/maven2</url>
-        </repository>        
+            <id>sorcersoft</id>
+            <name>Internal Releases</name>
+            <url>http://mvn.sorcersoft.com/content/repositories/sorcersoft/</url>
+        </repository>
     </distributionManagement>
 
     <repositories>
@@ -424,7 +424,7 @@
         <gmaven.version>1.4</gmaven.version>
         <gmavenProviderSelection>2.0</gmavenProviderSelection>
         <junit.version>4.8.2</junit.version>
-        <rio.version>5.0-M5</rio.version>
+        <rio.version>5.0-M5S0</rio.version>
         <rio.plugin.version>5.1</rio.plugin.version>
         <river.version>2.2.2</river.version>
         <hyperic.version>1.6.3.82</hyperic.version>
